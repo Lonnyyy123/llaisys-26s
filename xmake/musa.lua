@@ -34,7 +34,8 @@ target("llaisys-ops-nvidia")
     add_cxflags(
         "-mtgpu",
         "--musa-path=" .. musa,
-        "--offload-arch=" .. arch)
+        "--offload-arch=" .. arch,
+        {force = true})
     if not is_plat("windows") then
         add_cxflags("-fPIC", "-Wno-unknown-pragmas")
     end

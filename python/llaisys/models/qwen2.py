@@ -223,8 +223,7 @@ class Qwen2:
     ):
 
         if max_new_tokens is None:
-            maxseq = getattr(self, "maxseq", getattr(self, "_maxseq", None))
-            max_new_tokens = 128 if maxseq is None else max(0, int(maxseq) - len(inputs))
+            max_new_tokens = max(0, self.maxseq - len(inputs))
         else:
             max_new_tokens = int(max_new_tokens)
 
@@ -232,26 +231,25 @@ class Qwen2:
         if max_new_tokens <= 0:
             return outputs
 
-        model = getattr(self, "_model", getattr(self, "model", None))
+        model = self._model
         if model is None:
             raise RuntimeError("Qwen2 model has not been initialized")
 
         _load_qwen2_api()
         infer = LIB_LLAISYS.llaisysQwen2ModelInfer
-        end_token = getattr(self, "end_token", getattr(self, "_end_token", None))
 
         ntoken = len(outputs)
         prompt_buf = (c_int64 * ntoken)(*outputs)
         next_token = int(infer(model, prompt_buf, c_size_t(ntoken)))
         outputs.append(next_token)
-        if end_token is not None and next_token == int(end_token):
+        if next_token == self.end_token:
             return outputs
 
         for _ in range(max_new_tokens - 1):
             token_buf = (c_int64 * 1)(next_token)
             next_token = int(infer(model, token_buf, c_size_t(1)))
             outputs.append(next_token)
-            if end_token is not None and next_token == int(end_token):
+            if next_token == self.end_token:
                 break
 
         return outputs

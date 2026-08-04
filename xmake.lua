@@ -152,7 +152,8 @@ target("llaisys")
         add_shflags(
             "-mtgpu",
             "--musa-path=" .. (get_config("musa-path") or "/usr/local/musa"),
-            "--offload-arch=" .. (get_config("musa-arch") or "mp_31"))
+            "--offload-arch=" .. (get_config("musa-arch") or "mp_31"),
+            {force = true})
     end
 
     set_languages("cxx17")
