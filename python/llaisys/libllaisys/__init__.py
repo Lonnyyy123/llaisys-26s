@@ -30,14 +30,6 @@ def add_windows_dll_directories(lib_dir):
         if cuda_path:
             candidates.append(Path(cuda_path) / "bin")
 
-    for path_entry in os.environ.get("PATH", "").split(os.pathsep):
-        if path_entry:
-            candidates.append(Path(path_entry))
-
-    for search_root in [Path(sys.prefix), *map(Path, sys.path)]:
-        candidates.append(search_root / "Lib" / "site-packages" / "torch" / "lib")
-        candidates.append(search_root / "torch" / "lib")
-
     seen = set()
     for candidate in candidates:
         try:
