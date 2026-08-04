@@ -13,9 +13,38 @@ option("nv-gpu")
     set_description("Whether to compile implementations for Nvidia GPU")
 option_end()
 
+option("cuda-arch")
+    set_default("sm_86")
+    set_showmenu(true)
+    set_description("CUDA GPU architecture used for Nvidia kernels")
+option_end()
+
+option("musa-gpu")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Whether to compile the Moore Threads MUSA backend")
+option_end()
+
+option("musa-path")
+    set_default("/usr/local/musa")
+    set_showmenu(true)
+    set_description("MUSA SDK directory")
+option_end()
+
+option("musa-arch")
+    set_default("mp_31")
+    set_showmenu(true)
+    set_description("MUSA GPU architecture used for kernels")
+option_end()
+
 if has_config("nv-gpu") then
     add_defines("ENABLE_NVIDIA_API")
     includes("xmake/nvidia.lua")
+end
+
+if has_config("musa-gpu") then
+    add_defines("ENABLE_NVIDIA_API", "ENABLE_MUSA_API")
+    includes("xmake/musa.lua")
 end
 
 target("llaisys-utils")
@@ -37,6 +66,9 @@ target("llaisys-device")
     set_kind("static")
     add_deps("llaisys-utils")
     add_deps("llaisys-device-cpu")
+    if has_config("nv-gpu") or has_config("musa-gpu") then
+        add_deps("llaisys-device-nvidia")
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")
@@ -92,6 +124,10 @@ target("llaisys-ops")
     
     add_files("src/ops/*/*.cpp")
 
+    if has_config("musa-gpu") then
+        add_syslinks("dl")
+    end
+
     on_install(function (target) end)
 target_end()
 
@@ -102,6 +138,22 @@ target("llaisys")
     add_deps("llaisys-core")
     add_deps("llaisys-tensor")
     add_deps("llaisys-ops")
+    if has_config("nv-gpu") or has_config("musa-gpu") then
+        add_deps("llaisys-ops-nvidia")
+    end
+
+    if has_config("musa-gpu") then
+        add_linkdirs(path.join(get_config("musa-path") or "/usr/local/musa", "lib"))
+        add_links("musart")
+        add_syslinks("dl")
+        set_toolset(
+            "sh",
+            "g++@" .. path.join(os.projectdir(), "xmake", "musa-g++"))
+        add_shflags(
+            "-mtgpu",
+            "--musa-path=" .. (get_config("musa-path") or "/usr/local/musa"),
+            "--offload-arch=" .. (get_config("musa-arch") or "mp_31"))
+    end
 
     set_languages("cxx17")
     set_warnings("all", "error")

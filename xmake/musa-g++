@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# xmake recognizes the g++ tool rules, while this wrapper lets mcc infer MUSA
+# source mode from the .cu suffix instead of receiving xmake's -x c++ flag.
+args=""
+skip_next=0
+for arg in "$@"; do
+    if [ "$skip_next" -eq 1 ]; then
+        skip_next=0
+        continue
+    fi
+    if [ "$arg" = "-x" ]; then
+        skip_next=1
+        continue
+    fi
+    args="$args \"$arg\""
+done
+
+eval "exec \"${MUSA_HOME:-/usr/local/musa}/bin/mcc\" $args"

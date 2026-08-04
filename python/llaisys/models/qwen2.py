@@ -4,6 +4,7 @@ from ..libllaisys import DeviceType
 
 import json
 import math
+import os
 from pathlib import Path
 import safetensors
 from ctypes import byref, c_char, c_int, c_int64, c_size_t, c_void_p, cast
@@ -43,6 +44,10 @@ def _meta_from_config(config):
     hidden_size = int(config["hidden_size"])
     num_heads = int(config["num_attention_heads"])
     head_dim = int(config.get("head_dim", hidden_size // num_heads))
+    config_maxseq = int(config["max_position_embeddings"])
+    cache_maxseq = int(os.environ.get("LLAISYS_MAX_SEQ_LEN", min(config_maxseq, 2048)))
+    if cache_maxseq <= 0:
+        raise ValueError("LLAISYS_MAX_SEQ_LEN must be positive")
 
     return LlaisysQwen2Meta(
         _dtype_from_config(config),
@@ -52,7 +57,7 @@ def _meta_from_config(config):
         int(config.get("num_key_value_heads", num_heads)),
         head_dim,
         int(config["intermediate_size"]),
-        int(config["max_position_embeddings"]),
+        min(cache_maxseq, config_maxseq),
         int(config["vocab_size"]),
         float(config.get("rms_norm_eps", 1e-6)),
         float(config.get("rope_theta", 10000.0)),

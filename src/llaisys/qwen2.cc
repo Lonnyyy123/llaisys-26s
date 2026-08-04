@@ -42,6 +42,13 @@ void destroyTensorVector(std::vector<llaisysTensor_t> &tensors) {
 } // namespace
 
 struct LlaisysQwen2Model {
+    struct WorkspaceEntry {
+        std::vector<size_t> shape;
+        llaisysDataType_t dtype;
+        std::vector<llaisys::tensor_t> tensors;
+        size_t used = 0;
+    };
+
     LlaisysQwen2Meta meta;
     llaisysDeviceType_t device;
     std::vector<int> device_ids;
@@ -68,6 +75,7 @@ struct LlaisysQwen2Model {
     llaisys::tensor_t position_ids;
     llaisys::tensor_t hidden_states;
     llaisys::tensor_t normed_hidden_states;
+    std::vector<WorkspaceEntry> workspace;
 
     ~LlaisysQwen2Model() {
         destroyTensor(weights.in_embed);
@@ -148,7 +156,7 @@ int modelDeviceId(const LlaisysQwen2Model *model) {
     return model->device_ids.empty() ? 0 : model->device_ids[0];
 }
 
-llaisys::tensor_t createModelTensor(
+llaisys::tensor_t allocateModelTensor(
     const LlaisysQwen2Model *model,
     const std::vector<size_t> &shape,
     llaisysDataType_t dtype) {
@@ -157,6 +165,34 @@ llaisys::tensor_t createModelTensor(
         dtype,
         model->device,
         modelDeviceId(model));
+}
+
+void resetWorkspace(LlaisysQwen2Model *model) {
+    for (auto &entry : model->workspace) {
+        entry.used = 0;
+    }
+}
+
+llaisys::tensor_t createModelTensor(
+    LlaisysQwen2Model *model,
+    const std::vector<size_t> &shape,
+    llaisysDataType_t dtype) {
+    for (auto &entry : model->workspace) {
+        if (entry.dtype == dtype && entry.shape == shape) {
+            if (entry.used == entry.tensors.size()) {
+                entry.tensors.push_back(allocateModelTensor(model, shape, dtype));
+            }
+            return entry.tensors[entry.used++];
+        }
+    }
+
+    LlaisysQwen2Model::WorkspaceEntry entry;
+    entry.shape = shape;
+    entry.dtype = dtype;
+    entry.tensors.push_back(allocateModelTensor(model, shape, dtype));
+    entry.used = 1;
+    model->workspace.push_back(std::move(entry));
+    return model->workspace.back().tensors.front();
 }
 
 void runEmbedding(LlaisysQwen2Model *model, const int64_t *token_ids, size_t ntoken) {
@@ -376,6 +412,7 @@ int64_t runInfer(LlaisysQwen2Model *model, int64_t *token_ids, size_t ntoken) {
         "Qwen2: KV cache capacity exceeded");
 
     const size_t past_len = model->past_len;
+    resetWorkspace(model);
     runEmbedding(model, token_ids, ntoken);
     buildPositionIds(model, past_len, ntoken);
     for (size_t layer = 0; layer < model->meta.nlayer; ++layer) {
