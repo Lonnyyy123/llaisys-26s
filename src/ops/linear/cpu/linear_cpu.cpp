@@ -14,17 +14,17 @@ void linear_(
     size_t in_features,
     size_t out_features) {
     for (size_t i = 0; i < rows; i++) {
+        const T *in_row = in + i * in_features;
+        T *out_row = out + i * out_features;
         for (size_t j = 0; j < out_features; j++) {
-            float sum = 0.0;
+            const T *weight_row = weight + j * in_features;
+            float sum = bias == nullptr ? 0.0F : llaisys::utils::cast<float>(bias[j]);
             for (size_t k = 0; k < in_features; k++) {
-                const float in_v = llaisys::utils::cast<float>(in[i * in_features + k]);
-                const float weight_v = llaisys::utils::cast<float>(weight[j * in_features + k]);
+                const float in_v = llaisys::utils::cast<float>(in_row[k]);
+                const float weight_v = llaisys::utils::cast<float>(weight_row[k]);
                 sum += in_v * weight_v;
             }
-            if (bias != nullptr) {
-                sum += llaisys::utils::cast<float>(bias[j]);
-            }
-            out[i * out_features + j] = llaisys::utils::cast<T>(sum);
+            out_row[j] = llaisys::utils::cast<T>(sum);
         }
     }
 }

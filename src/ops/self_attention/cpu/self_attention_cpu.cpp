@@ -4,8 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
-#include <numeric>
 #include <vector>
 
 namespace {
@@ -27,35 +25,46 @@ void self_attention_(
     const size_t past_len = kv_len - q_len;
     std::vector<float> scores(kv_len);
     std::vector<float> probs(kv_len);
+    std::vector<float> output(value_dim);
     for (size_t qi = 0; qi < q_len; qi++) {
         const size_t visible_kv_len = past_len + qi + 1;
         for (size_t qh = 0; qh < num_heads; qh++) {
-            size_t kv_head = qh / heads_per_kv;
-            for (size_t ki = 0; ki < kv_len; ki++) {
-                if (ki >= visible_kv_len) {
-                    scores[ki] = -std::numeric_limits<float>::infinity();
-                    continue;
-                }
+            const size_t kv_head = qh / heads_per_kv;
+            const T *q_row = q + (qi * num_heads + qh) * qk_dim;
+            for (size_t ki = 0; ki < visible_kv_len; ki++) {
+                const T *k_row = k + (ki * num_kv_heads + kv_head) * qk_dim;
                 float dot = 0.0F;
                 for (size_t d = 0; d < qk_dim; d++) {
-                    const size_t q_offset = (qi * num_heads + qh) * qk_dim + d;
-                    const size_t k_offset = (ki * num_kv_heads + kv_head) * qk_dim + d;
-                    dot += llaisys::utils::cast<float>(q[q_offset]) * llaisys::utils::cast<float>(k[k_offset]);
+                    dot += llaisys::utils::cast<float>(q_row[d]) *
+                           llaisys::utils::cast<float>(k_row[d]);
                 }
                 scores[ki] = dot * scale;
             }
-            float max_score = *std::max_element(scores.begin(), scores.end());
-            std::transform(scores.begin(), scores.end(), scores.begin(), [=](float x) { return std::exp(x - max_score); });
-            float expsum = std::accumulate(scores.begin(), scores.end(), 0.0F);
-            std::transform(scores.begin(), scores.end(), probs.begin(), [=](float x) { return x / expsum; });
-            for (size_t vd = 0; vd < value_dim; vd++) {
-                float out = 0.0F;
-                for (size_t vi = 0; vi < kv_len; vi++) {
-                    const size_t v_offset = (vi * num_kv_heads + kv_head) * value_dim+vd;
-                    out += probs[vi] * llaisys::utils::cast<float>(v[v_offset]);
+
+            const float max_score = *std::max_element(
+                scores.begin(), scores.begin() + visible_kv_len);
+            float expsum = 0.0F;
+            for (size_t vi = 0; vi < visible_kv_len; vi++) {
+                probs[vi] = std::exp(scores[vi] - max_score);
+                expsum += probs[vi];
+            }
+            const float inv_expsum = 1.0F / expsum;
+            for (size_t vi = 0; vi < visible_kv_len; vi++) {
+                probs[vi] *= inv_expsum;
+            }
+
+            std::fill(output.begin(), output.end(), 0.0F);
+            for (size_t vi = 0; vi < visible_kv_len; vi++) {
+                const float probability = probs[vi];
+                const T *v_row = v + (vi * num_kv_heads + kv_head) * value_dim;
+                for (size_t vd = 0; vd < value_dim; vd++) {
+                    output[vd] += probability *
+                                  llaisys::utils::cast<float>(v_row[vd]);
                 }
-                const size_t attn_offset = (qi * num_heads + qh) * value_dim+vd;
-                attn_val[attn_offset] = llaisys::utils::cast<T>(out);
+            }
+            T *output_row = attn_val + (qi * num_heads + qh) * value_dim;
+            for (size_t vd = 0; vd < value_dim; vd++) {
+                output_row[vd] = llaisys::utils::cast<T>(output[vd]);
             }
         }
     }

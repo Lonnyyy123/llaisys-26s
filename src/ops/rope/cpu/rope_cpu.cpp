@@ -2,6 +2,7 @@
 
 #include "../../../utils.hpp"
 #include <cmath>
+#include <vector>
 namespace {
 
 template <typename T>
@@ -13,18 +14,35 @@ void rope_(
     size_t num_heads,
     size_t head_dim,
     float theta) {
-    size_t base = head_dim / 2;
+    const size_t half_dim = head_dim / 2;
+    std::vector<float> cos_table(seq_len * half_dim);
+    std::vector<float> sin_table(seq_len * half_dim);
+
+    // The rotation angles depend only on position and dimension, not on head.
+    // Compute the trigonometric values once and reuse them for every head.
+    for (size_t i = 0; i < seq_len; i++) {
+        const float position = static_cast<float>(pos_ids[i]);
+        for (size_t k = 0; k < half_dim; k++) {
+            const float phi = position / std::pow(
+                theta,
+                2.0F * static_cast<float>(k) / static_cast<float>(head_dim));
+            cos_table[i * half_dim + k] = std::cos(phi);
+            sin_table[i * half_dim + k] = std::sin(phi);
+        }
+    }
+
     for (size_t i = 0; i < seq_len; i++) {
         for (size_t j = 0; j < num_heads; j++) {
-            for (size_t k = 0; k < head_dim / 2; k++) {
-                float phi = static_cast<float>(pos_ids[i]) / std::pow(theta, 2.0F * k / head_dim);
-                float cos = std::cos(phi),sin = std::sin(phi);
-                float a_out = cos *llaisys::utils::cast<float>(in[i * num_heads * head_dim + j * head_dim + k])
-                            - sin *llaisys::utils::cast<float>(in[i * num_heads * head_dim + j * head_dim + k+base]);
-                float b_out = cos *llaisys::utils::cast<float>(in[i * num_heads * head_dim + j * head_dim + k+base])
-                            + sin *llaisys::utils::cast<float>(in[i * num_heads * head_dim + j * head_dim + k]);
-                out[i * num_heads * head_dim + j * head_dim + k] = llaisys::utils::cast<T>(a_out);
-                out[i * num_heads * head_dim + j * head_dim + k+base] = llaisys::utils::cast<T>(b_out);
+            const size_t input_base = (i * num_heads + j) * head_dim;
+            for (size_t k = 0; k < half_dim; k++) {
+                const float cos_angle = cos_table[i * half_dim + k];
+                const float sin_angle = sin_table[i * half_dim + k];
+                const float first = llaisys::utils::cast<float>(in[input_base + k]);
+                const float second = llaisys::utils::cast<float>(in[input_base + k + half_dim]);
+                const float a_out = cos_angle * first - sin_angle * second;
+                const float b_out = cos_angle * second + sin_angle * first;
+                out[input_base + k] = llaisys::utils::cast<T>(a_out);
+                out[input_base + k + half_dim] = llaisys::utils::cast<T>(b_out);
             }
         }
     }
